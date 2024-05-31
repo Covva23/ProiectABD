@@ -1,0 +1,84 @@
+Steps to solve the requirements:
+
+a)Get the states with a total population of over 10 million.
+
+db.zips.createIndex({ state: 1 });
+db.zips.createIndex({ city: 1 });
+db.zips.createIndex({ county: 1 });
+db.zips.createIndex({ population: 1 });
+db.zips.createIndex({ location: "2dsphere" });
+
+db.zips.updateMany({}, [
+  {
+    $set: {
+      location: {
+        type: "Point",
+        coordinates: ["$lng", "$lat"]
+      }
+    }
+  }
+]);
+
+db.zips.createIndex({ location: "2dsphere" });
+
+db.zips.aggregate([
+  { $group: { _id: "$state_name", totalPopulation: { $sum: "$population" } } },
+  { $match: { totalPopulation: { $gt: 10000000 } } },
+  { $sort: { totalPopulation: -1 } }
+]);
+
+b)Get the average city population by state.
+db.zips.aggregate([
+  { $group: { _id: { state: "$state_name", city: "$city" }, cityPopulation: { $sum: "$population" } } },
+  { $group: { _id: "$_id.state", avgCityPopulation: { $avg: "$cityPopulation" } } },
+  { $sort: { _id: 1 } }
+]);
+
+c) Get the largest and the smallest city in each state.
+db.zips.aggregate([
+  { $group: { _id: { state: "$state_name", city: "$city" }, cityPopulation: { $sum: "$population" } } },
+  { $group: { _id: "$_id.state", cities: { $push: { city: "$_id.city", population: "$cityPopulation" } } } },
+  { $project: { _id: 1, largestCity: { $arrayElemAt: ["$cities", -1] }, smallestCity: { $arrayElemAt: ["$cities", 0] } } },
+  { $sort: { _id: 1 } }
+]);
+
+d)Get the largest and the smallest counties in each state.
+
+db.zips.aggregate([
+  { $group: { _id: { state: "$state_name", county: "$county_name" }, countyPopulation: { $sum: "$population" } } },
+  { $group: { _id: "$_id.state", counties: { $push: { county: "$_id.county", population: "$countyPopulation" } } } },
+  { $project: { _id: 1, largestCounty: { $arrayElemAt: ["$counties", -1] }, smallestCounty: { $arrayElemAt: ["$counties", 0] } } },
+  { $sort: { _id: 1 } }
+]);
+
+e) Get the nearest 10 zips from one of Chicago's landmarks, the Willis Tower situated at coordinates 41.878876, -87.635918. - It gives me the same address 10 times
+db.zips.aggregate([
+  {
+    $geoNear: {
+      near: { type: "Point", coordinates: [-87.635918, 41.878876] },
+      distanceField: "dist.calculated",
+      spherical: true,
+      limit: 10
+    }
+  }
+]);
+
+f) Get the total population situated between 50 and 200 kms around New York's landmark, the Statue of Liberty at coordinates 40.689247, -74.044502.
+
+db.zips.aggregate([
+  {
+    $geoNear: {
+      near: { type: "Point", coordinates: [-74.044502, 40.689247] },
+      distanceField: "dist.calculated",
+      minDistance: 50000,
+      maxDistance: 200000,
+      spherical: true
+    }
+  },
+  {
+    $group: {
+      _id: null,
+      totalPopulation: { $sum: "$population" }
+    }
+  }
+]);
